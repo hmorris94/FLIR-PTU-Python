@@ -2,6 +2,9 @@ import serial
 from warnings import warn
 
 
+__all__ = ['PTU']
+
+
 class PTU(object):
 
     def __init__(self, port, baud=9600, baud_already_set=False, timeout=60):
