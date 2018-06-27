@@ -31,6 +31,7 @@ class PTU(object):
         self.__maxTilt = self._determine_max_tilt()
         self.__maxPanSpeed = self._determine_max_pan_speed()
         self.__maxTiltSpeed = self._determine_max_tilt_speed()
+        self.__controlMode = self._determine_control_mode()
 
     def __del__(self):
 
@@ -43,6 +44,8 @@ class PTU(object):
     def __send_command(self, command):
         '''Writes command to serial port, first checking for
         any pending inputs.'''
+        if isinstance(command, str):
+            command = command.encode()
         assert isinstance(command, bytes)
 
         if self.serial.in_waiting > 0:
@@ -123,6 +126,12 @@ class PTU(object):
         # '* Maximum Tilt speed is 12000 positions/sec'
         return int(response.split()[5])
 
+    def _determine_control_mode(self):
+        '''Returns current control mode ('pos' or 'vel').'''
+        response = self.send(b'C ')
+        # '* PTU is in Independent Mode'
+        return 'pos' if (response.split()[5].lower() == "independent") else 'vel'
+
     # Define a few properties
 
     @property
@@ -142,6 +151,27 @@ class PTU(object):
             self.__send_command(b'ED ')
             self.__get_response()
             self.__echo = False
+
+    @property
+    def controlMode(self):
+        '''Control mode ('pos' or 'vel')'''
+        return self.__controlMode
+
+    # TODO - doesn't work
+    @controlMode.setter
+    def controlMode(self, mode):
+        if not isinstance(mode, str):
+            raise TypeError('Mode must be "pos" or "vel"')
+        if mode.lower() == 'pos':
+            self.__send_command(b'CI ')
+            self.__get_response()
+            self.__controlMode = 'pos'
+        elif mode.lower() == 'vel':
+            self.__send_command(b'CV ')
+            self.__get_response()
+            self.__controlMode = 'vel'
+        else:
+            raise ValueError('Mode must be "pos" or "vel"')
 
     @property
     def panResolution(self):

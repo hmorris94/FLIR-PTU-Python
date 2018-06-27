@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="flirptu",
-    version="0.0.1a1",
+    version="0.0.1a2",
     author="Hunter Morris",
     author_email="hunterbmorris@gmail.com",
     description="Controller for FLIR E-series pan-tilt units",
