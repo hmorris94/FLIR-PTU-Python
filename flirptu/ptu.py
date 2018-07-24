@@ -22,6 +22,11 @@ class PTU(object):
             warn('Baud should be one of {600, 1200, 2400, 4800, 9600, 19200, '
                  + '38400, 57600, 115200}. Defaulting to 9600.')
 
+        # enable factory limits
+        self.__send_command(b'LE ')
+        self.__get_response()
+        self.__user_limiting = False
+
         self.__echo = self._determine_echo_state()
         self.__panResolution = self._determine_pan_resolution()
         self.__tiltResolution = self._determine_tilt_resolution()
@@ -29,6 +34,7 @@ class PTU(object):
         self.__maxPan = self._determine_max_pan()
         self.__minTilt = self._determine_min_tilt()
         self.__maxTilt = self._determine_max_tilt()
+        self.__userMinPan, self.__userMaxPan, self.__userMinTilt, self.__userMaxTilt = self._determine_user_limits()
         self.__maxPanSpeed = self._determine_max_pan_speed()
         self.__maxTiltSpeed = self._determine_max_tilt_speed()
         self.__controlMode = self._determine_control_mode()
@@ -114,6 +120,18 @@ class PTU(object):
         # len('* Maximum Tilt position is ') == 27
         return int(response[27:])
 
+    def _determine_user_limits(self):
+        '''Returns a tuple of user-defined limits -> (minPan, maxPan, minTilt, maxTilt).'''
+        # len('* Minimum Pan position is ') == 26
+        minPan = int(self.send(b'PNU ')[26:])
+        # len('* Maximum Pan position is ') == 26
+        maxPan = int(self.send(b'PXU ')[26:])
+        # len('* Minimum Tilt user defined position is ') == 40
+        minTilt = int(self.send(b'TNU ')[27:])
+        # len('* Maximum Tilt user defined position is ') == 40
+        maxTilt = int(self.send(b'TXU ')[27:])
+        return minPan, maxPan, minTilt, maxTilt
+
     def _determine_max_pan_speed(self):
         '''Returns maximum panning speed set on the PTU.'''
         response = self.send(b'PU ')
@@ -129,8 +147,8 @@ class PTU(object):
     def _determine_control_mode(self):
         '''Returns current control mode ('pos' or 'vel').'''
         response = self.send(b'C ')
-        # '* PTU is in Independent Mode'
-        return 'pos' if (response.split()[5].lower() == "independent") else 'vel'
+        # '* Independent speed control mode'
+        return 'pos' if (response.split()[2].lower() == "independent") else 'vel'
 
     # Define a few properties
 
@@ -229,12 +247,12 @@ class PTU(object):
         else:
             raise TypeError('Commands should be of type bytes')
 
-        # TODO - See sections 4.5 and 7.1
-        if command[:-1] in ['LE', 'LD', 'LU', 'PNU', 'PXU', 'TNU', 'TXU']:
-            warn('Setting limits is not currently supported')
+        # TODO - See section 7.2
+        if command[:-1] == 'LD':
+            warn('Disabling limits is not currently supported')
         # TODO - See section 4.6
         elif command[:-1] in ['I', 'S']:
-            warn('Changing execution mode is not currently supported')
+            warn('Changing position execution mode is not currently supported')
         # TODO - See section 4.9 and 4.10
         elif command[:-1] in ['ME', 'MD']:
             warn('Monitoring is not currently supported')
@@ -246,6 +264,10 @@ class PTU(object):
             self.__echo = True
         elif command == b'ED ':
             self.__echo = False
+        elif command == b'LE ':
+            self.__user_limiting = False
+        elif command == b'LU ':
+            self.__user_limiting = True
 
         if strip_echo and self.echo:
             return response[len(command):len(response) - len(self._TERM)]
@@ -253,6 +275,50 @@ class PTU(object):
             return response[:len(response) - len(self._TERM)]
 
     # Set pan and tilt values
+
+    def setUserPanLimits(self, minimum, maximum):
+        '''Set user limit on panning.'''
+        ret = True
+
+        resp = self.send(b'PNU' + str(int(minimum)).encode() + b' ')
+        if resp[0] != '*':
+            warn('Pan minumum limit response: ' + resp, RuntimeWarning)
+            ret = False
+
+        resp = self.send(b'PXU' + str(int(maximum)).encode() + b' ')
+        if resp[0] != '*':
+            warn('Pan maximum limit response: ' + resp, RuntimeWarning)
+            ret = False
+
+        return ret
+
+    def setUserTiltLimits(self, minimum, maximum):
+        '''Set user limit on tilting.'''
+        ret = True
+
+        resp = self.send(b'TNU' + str(int(minimum)).encode() + b' ')
+        if resp[0] != '*':
+            warn('Tilt minumum limit response: ' + resp, RuntimeWarning)
+            ret = False
+
+        resp = self.send(b'TXU' + str(int(maximum)).encode() + b' ')
+        if resp[0] != '*':
+            warn('Tilt maximum limit response: ' + resp, RuntimeWarning)
+            ret = False
+
+        return ret
+
+    def enableUserLimits(self):
+        '''Enable user limits if not already enabled.'''
+        if not self.__user_limiting:
+            self.send(b'LU ')
+            self.__user_limiting = True
+
+    def disableUserLimits(self):
+        '''Enable factory limits.'''
+        if self.__user_limiting:
+            self.send(b'LE ')
+            self.__user_limiting = False
 
     def setPanPosition(self, pos, blocking=False):
         '''Command PTU to go to a pan position.'''
@@ -494,4 +560,4 @@ class PTU(object):
 
     def tiltAngleToPosition(self, angle):
         '''Convert an angle (in degrees) to a number of tilt positions.'''
-        return round(angle / (self.panResolution / 3600))
+        return round(angle / (self.tiltResolution / 3600))
